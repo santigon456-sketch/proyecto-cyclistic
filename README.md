@@ -11,6 +11,8 @@ El propósito principal es analizar los datos históricos de viajes de **Cyclist
 ---
 
 ## 🛠️ Herramientas y Tecnologías
+* **Limpieza previa:** Excel (Power Query)
+* * **Grafico de ubicacion:** Power BI
 * **Lenguaje:** R
 * **Entorno de Reporte:** Quarto (Generación de HTML Interactivo)
 * **Librerías Clave:** `tidyverse` (dplyr, ggplot2), `kableExtra`, `knitr`.
