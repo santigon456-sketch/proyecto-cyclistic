@@ -49,6 +49,10 @@ Basado en los patrones de frecuencia (picos en fines de semana) y duración, se 
 3.  **Marketing Estacional:** Campañas de conversión en primavera para captar la reactivación del uso tras el invierno de Chicago.
 
 ---
+### 🚀 Cómo visualizar el informe completo
+Puedes acceder al reporte interactivo con todos los gráficos y tablas detalladas aquí:
+👉 **[Ver Reporte Interactivo](https://santigon456-sketch.github.io/proyecto-cyclistic/ciclistic-terminado.html)**
+
 
 ## 📁 Estructura del Proyecto
 * `ciclistic.qmd`: Código fuente en Quarto con el análisis detallado en R.
