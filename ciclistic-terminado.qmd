@@ -1,0 +1,527 @@
+---
+title: "Estrategia de Crecimiento Cyclistic: Análisis del Comportamiento del Usuario"
+author: "Santiago Gonzalez"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    theme: cosmo
+    code-fold: true
+execute:
+  warning: false
+  message: false
+---
+
+## Introducción
+
+El objetivo de este proyecto es analizar los datos históricos de Cyclistic, una empresa de bicicletas compartidas, para identificar diferencias clave en el comportamiento de uso entre los miembros anuales y los usuarios ocasionales.
+
+Este análisis busca generar recomendaciones basadas en datos para diseñar estrategias de marketing orientadas a convertir a los usuarios ocasionales en suscriptores a largo plazo, optimizando así la rentabilidad de la compañía.
+
+## SOBRE LOS DATOS
+
+Cyclistic, empresa ficticia de la ciudad de Chicago proporciona los datos mensuales sobre sus usuarios en una base de datos de internet. De allí se extrajeron los datos a trabajar durante el periodo de marzo 2025 y febrero 2026.
+
+Se analizó un conjunto de datos masivo correspondiente a **12 meses** de operación, con un total de **4.034.328 de registros**. La limpieza se realizo mes a mes de manera individual mediante Excel con Macros.
+
+-   **Metodología:** la limpieza se realizó mediante herramientas de procesamiento de datos para filtrar variables redundantes, normalizar formatos de fecha (Día/Mes/Año), eliminar valores nulos, inconsistentes o atipicos y asegurar la integridad de la información.
+
+-   **Métricas Creadas:** se calcularon variables críticas para el análisis, incluyendo la duración del viaje en minutos (ride_length), el día de la semana (day_of_week) y el mes del año.
+
+-   **Interfaz de codigo utilizada:** una vez normalizados los datos de cada mes de manera invidual, se cargo cada una de estas tablas en R, donde se juntaron los mismos para crear la tabla viajes_final, con mas de 4 millones de registros de viajes.
+
+## PREPARACION DE LOS DATOS
+
+Cargamos las librerías y el dataset de los 12 meses de viajes.
+
+La tabla viajes_final es la que contiene los registros de los 12 meses estudiados. Esta tiene 8 variables.
+
+1.  Tipo de bicicleta
+
+2.  Estacion de inicio
+
+3.  Estacion final
+
+4.  Hora de comenzo del viaje
+
+5.  Hora de finalizacion del viaje
+
+6.  Tipo de usuario
+
+7.  Duracion del viaje
+
+8.  Dia de la semana del viaje
+
+```{r}
+#| label: carga-datos
+#| message: false
+#| warning: false
+
+#| echo: false
+
+library(tidyverse)
+# Cargamos la tabla 
+viajes_final <- readRDS("viajes_final.rds")
+```
+
+## ANALISIS EXPLORATORIO (EDA)
+
+En esta etapa, el objetivo fue identificar las tendencias y comportamientos que diferencian a los **miembros anuales** de los **usuarios ocasionales**. Para ello, me enfoqué en cuatro pilares fundamentales: la duración de los viajes, la temporalidad, la ubicación geográfica y la preferencia de equipos.
+
+**Diagnóstico de dispersión y sesgo en los datos crudos**
+
+Antes de avanzar con las conclusiones de negocio, realicé un análisis de estadística descriptiva sobre el dataset original de más de 4 millones de registros. Fue en este punto donde detecté la primera señal de alerta en el comportamiento de los datos.
+
+**El Hallazgo: una desviación estándar anómala**
+
+Durante la fase inicial del **Análisis Exploratorio de Datos (EDA)**, se identificó una anomalía crítica en la variable de duración de los viajes. Se observó que la **desviación estándar** es significativamente más alta que la **media** (aproximadamente el doble), lo cual es un indicador estadístico de una **dispersión extrema** y la presencia de **valores atípicos (outliers)** que distorsionan el promedio.
+
+Al contrastar las **medidas de tendencia central**, se detectó que la **media** se encuentra fuertemente sesgada hacia la derecha debido a su alta **sensibilidad a los valores extremos**. En cambio, la **mediana** se mantiene como una **medida robusta**, representando mejor al usuario típico de Cyclistic al no verse afectada por estos viajes de duración inusual.
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+# 1. Tabla de Duración
+resumen_duracion <- viajes_final %>%
+  group_by(member_casual) %>%
+  summarise(
+    Promedio_Minutos = round(mean(ride_length), 2),
+    Mediana_Minutos = round(median(ride_length), 2),
+     Desviacion_Estandar = round(sd(ride_length), 2), # Cálculo de la desviación estándar
+    Cantidad_Viajes = n()
+  )
+
+knitr::kable(resumen_duracion, 
+             col.names = c("Tipo de Usuario", "Promedio (min)","Mediana (min)", "Desv. Estándar", "Total Viajes"))
+```
+
+**Identificación del Problema**
+
+Este fenómeno reveló que el dataset contenía ruidos operativos: viajes que duraban cientos de minutos (posibles bicicletas no devueltas, errores de anclaje o robos). Si hubiera ignorado esta desviación de **50.32**, las recomendaciones de marketing para Cyclistic habrían estado basadas en una realidad distorsionada por valores atípicos.
+
+Este hallazgo inicial fue el que motivó la necesidad de realizar un **Análisis de outliers** mediante diagramas de caja (boxplots) y un posterior filtrado técnico para normalizar la muestra.
+
+Para garantizar la integridad del análisis y evitar que estos registros sesguen los resultados finales, se utilizaron **percentiles** y el **rango intercuartílico (RIC)** para identificar formalmente los valores atípicos. Siguiendo el estándar estadístico, se clasificaron como **outliers** todos los viajes cuya duración supera el límite de Q3 + 1.5 x RIC, procediendo a su filtrado para trabajar con una muestra que represente el comportamiento real y cotidiano del servicio.
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+### Diagnóstico Estadístico de Distribución y Outliers
+# Esta tabla permite observar cómo la duración de los viajes se mantiene estable en los cuartiles iniciales 
+# y explota hacia el final, confirmando que el 95% de los datos no guarda relación con los valores máximos.
+
+# Generamos la tabla de percentiles solicitada
+tabla_diagnostico <- viajes_final %>%
+  group_by(member_casual) %>%
+  summarise(
+    Q1_P25 = quantile(ride_length, 0.25),      # Primer Cuartil: 25% de los datos [cite: 81]
+    Mediana_P50 = quantile(ride_length, 0.50), # Mediana: valor central robusto [cite: 6, 8]
+    P90 = quantile(ride_length, 0.90),         # Percentil 90 [cite: 39]
+    P95 = quantile(ride_length, 0.95),         # Percentil 95 [cite: 39]
+    Maximo = max(ride_length)                  # Valor máximo (P100) [cite: 110]
+  ) %>%
+  # Redondeamos todas las columnas numéricas a 2 decimales
+  mutate(across(where(is.numeric), round, 2))
+
+# La mostramos de forma elegante con knitr
+knitr::kable(
+  tabla_diagnostico, 
+  caption = "Diagnóstico de Distribución: Cuartiles vs. Valores Extremos",
+  col.names = c("Tipo de Usuario", "Q1 (P25)", "Mediana (P50)", "P90", "P95", "Máximo"),
+  align = "lccccc" 
+)
+```
+
+```{r}
+#| label: ANALISIS-DURACION-VIAJES
+#| message: false
+#| warning: false
+#| echo: false
+# Asumiendo que tu dataframe se llama 'trips' y la columna 'ride_length'
+# 1. Calcular el Cuartil 1 y el Cuartil 3
+Q1 <- quantile(viajes_final$ride_length, 0.25)
+Q3 <- quantile(viajes_final$ride_length, 0.75)
+
+# 2. Calcular el RIC (Rango Intercuartílico)
+RIC <- Q3 - Q1
+
+# 3. (Opcional) Identificar los límites para detectar Outliers
+limite_superior <- Q3 + (1.5 * RIC)
+limite_inferior <- Q1 - (1.5 * RIC)
+
+# Imprimir resultados
+cat("El 50% central de los viajes dura entre", Q1, "y", Q3, "minutos.\n")
+cat("El Rango Intercuartílico es de:", RIC, "\n")
+cat("Cualquier viaje que supere los", limite_superior, "minutos es estadísticamente un valor atípico.\n")
+```
+
+```{r}
+#| message: false
+#| warning: false
+#| echo: false
+library(ggplot2)
+
+# Generamos el Boxplot
+ggplot(viajes_final, aes(x = member_casual, y = ride_length, fill = member_casual)) +
+  geom_boxplot(outlier.colour = "red", outlier.shape = 1) +
+  labs(title = "Distribución de duración de Viajes por tipo de usuario",
+       subtitle = "Identificación visual de valores atípicos",
+       x = "Tipo de Usuario",
+       y = "Duración del Viaje") +
+  theme_minimal()
+```
+
+**Tratamiento de Outliers y Normalización de la Muestra**
+
+Tras confirmar mediante la tabla de percentiles y el diagrama de cajas que los valores extremos (viajes de hasta 1,500 minutos) estaban distorsionando la realidad estadística, se procedió a la creación de una nueva tabla de análisis denominada `viajes_tipicos`.
+
+Aunque el criterio estadístico estándar del **Rango Intercuartílico (RIC)** identificó valores atípicos a partir de los 31 minutos, se determinó que este límite excluiría una parte significativa de la actividad recreativa legítima. Por ello, se optó por un **enfoque de negocio**, estableciendo el filtro en **240 minutos**. Este límite permite eliminar ruidos operativos (como bicicletas mal ancladas o robos) sin perder la representatividad de los usuarios casuales que realizan trayectos más extensos
+
+**filter(ride_length \> 1 & ride_length \< 240)**
+
+**Motivo de la elección del filtro:**
+
+1.  **Eliminación de falsos arranques:** Los viajes menores a un minuto suelen representar errores de anclaje, problemas técnicos con la bicicleta o usuarios que se arrepienten inmediatamente, por lo que no aportan valor al análisis de comportamiento.
+
+2.  **Exclusión de ruidos operativos:** Los viajes que exceden las 4 horas y llegan hasta las 24 o más se categorizaron como ruidos operativos (bicicletas perdidas, robos o fallas en el cierre del sistema). Incluirlos haría que la estrategia de marketing se base en errores y no en clientes reales.
+
+3.  **Enfoque en el uso recreativo y funcional:** Un límite de 4 horas es lo suficientemente amplio para captar incluso el uso recreativo más intenso, pero lo suficientemente estricto para eliminar los datos que sesgan la media.
+
+```{r}
+#| label: filtrado-datos
+#| echo: false
+
+# AQUÍ ES DONDE SE CREA EL OBJETO QUE FALTA
+viajes_tipicos <- viajes_final %>%
+  filter(ride_length > 1 & ride_length < 240)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+# Generamos la tabla de resumen basada en 'viajes_tipicos'
+tabla_resumen <- viajes_tipicos %>%
+  group_by(member_casual) %>%
+  summarise(
+    `Total Viajes` = n(),
+    Media = mean(ride_length),
+    Mediana = median(ride_length),
+    `Desvío Estándar` = sd(ride_length),
+    RIC = IQR(ride_length),
+    MAD = mad(ride_length)
+  ) %>%
+  # Redondeamos los cálculos a 2 decimales para que sea legible
+  mutate(across(where(is.numeric), round, 2))
+
+# Creamos la tabla con formato profesional
+tabla_resumen %>%
+  kbl(
+    caption = "Resumen Estadístico Comparativo: Usuarios Miembros vs. Casuales",
+    align = "lrrrrrr" # Izquierda para texto, derecha para todos los números
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed"),
+    full_width = F,
+    position = "center"
+  ) %>%
+  # Marcamos visualmente la diferencia entre usuarios y datos
+  column_spec(1, bold = T, border_right = T, color = "white", background = "#2c3e50") %>%
+  # Resaltamos la Mediana y el MAD por ser las medidas más confiables (robustas)
+  column_spec(c(3, 7), background = "#ebf5fb", bold = T) %>% 
+  # Ajustamos el ancho para que no quede todo apretado
+  column_spec(2:7, width = "2.5cm")
+```
+
+El análisis comparativo entre segmentos, tras normalizar la muestra (\< 4hs), revela una diferencia estructural en el uso del servicio. Utilizando medidas robustas para evitar el sesgo de los valores extremos, se determinó que la **mediana** de duración para usuarios **casuales (12.65 min)** supera significativamente a la de los **miembros (8.77 min)**.
+
+Más allá de la duración, la clave del negocio reside en la dispersión: la **desviación Mediana Absoluta (MAD)** de los usuarios casuales casi duplica a la de los miembros. Esta métrica confirma que los miembros operan bajo un modelo de **transporte funcional y estandarizado**, mientras que el segmento casual presenta una alta variabilidad recreativa. Para la estrategia de conversión, el desafío no es solo el precio, sino la migración del usuario de un hábito de 'exploración' a uno de 'utilidad diaria.
+
+```{r}
+#| echo: false
+#| message: false
+library(ggplot2)
+
+# Creamos el histograma comparativo
+ggplot(viajes_tipicos, aes(x = ride_length, fill = member_casual)) +
+  # Usamos 'identity' para que se superpongan y podamos comparar
+  geom_histogram(bins = 90, alpha = 0.5, position = "identity") + 
+  # Limitamos el eje X para apreciar el grueso de los datos
+  xlim(0, 90) + 
+  # Añadimos colores que contrasten
+  scale_fill_manual(values = c("member" = "#2c3e50", "casual" = "#e67e22")) +
+  labs(
+    title = "Visualización de la dispersión: Miembros vs. Casuales",
+    subtitle = "La anchura de la distribución refleja el desvío estándar y la variabilidad",
+    x = "Duración del viaje (minutos)",
+    y = "Cantidad de viajes",
+    fill = "Tipo de usuario"
+  ) +
+  theme_minimal() +
+  # Agregamos una línea vertical para marcar la mediana de cada grupo (opcional pero muy útil)
+  geom_vline(xintercept = 8.75, color = "#2c3e50", linetype = "dashed", size = 1) + # Mediana Miembros
+  geom_vline(xintercept = 12.65, color = "#e67e22", linetype = "dashed", size = 1)   # Mediana Casuales
+```
+
+El histograma confirma visualmente el **sesgo hacia la derecha** detectado en la fase analítica. Se observa una alta concentración de viajes de corta duración, pero con una **cola de distribución** que se extiende significativamente hacia la derecha, especialmente en los usuarios casuales. Esta asimetría explica por qué el promedio de los casuales (22.01 min) se sitúa tan por encima de su mediana (12.65 min)
+
+### Ahora que hemos analizado y normalizado los valores, continuamos con el analisis:
+
+### 1. Análisis de la Duración de los Viajes
+
+Para entender el uso que cada segmento le da a las bicicletas:
+
+```{r}
+#| echo: false
+#| message: false
+
+library(dplyr)
+library(knitr)
+library(kableExtra)
+
+# Creamos la tabla simplificada para la Parte 1
+tabla_parte1 <- viajes_tipicos %>%
+  group_by(member_casual) %>%
+  summarise(
+    Mediana = median(ride_length)
+  ) %>%
+  mutate(Mediana = round(Mediana, 2))
+
+# La mostramos con un formato elegante
+tabla_parte1 %>%
+  kbl(
+    caption = "Tabla 1: Duración del Viaje Típico (Mediana)",
+    col.names = c("Tipo de Usuario", "Duración Típica (min)"),
+    align = "lr"
+  ) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = F,
+    position = "left"
+  ) %>%
+  column_spec(1, bold = T, border_right = T) %>%
+  column_spec(2, width = "4cm", background = "#D5F5E3") # Resaltamos el resultado
+```
+
+1.  **Diferencia estructural en la duración:** El usuario muestra comportamientos notablemente distintos según su tipo de suscripción. Mientras que un **miembro anual** realiza viajes típicos de **8.77 minutos**, el **usuario casual** extiende su trayecto hasta los **12.65 minutos**.
+
+2.  **Magnitud del uso:** estadísticamente, el viaje típico de un usuario casual es un **44.5% más largo** que el de un miembro. Al utilizar la mediana, confirmamos que esta diferencia no es causada por unos pocos viajes largos, sino que es una característica intrínseca y generalizada del grupo casual.
+
+3.  **Identificación de perfiles de movilidad:**
+
+    -   La mediana de los **miembros (8.75 min)** sugiere un perfil de **utilidad y eficiencia**, compatible con trayectos funcionales de "última milla" o traslados cortos y directos (posiblemente trabajo o estudio).
+
+    -   La mediana de los **casuales (12.65 min)** refleja un perfil de **exploración o recreación**, donde el valor del servicio reside en una permanencia mayor sobre la bicicleta, indicando un uso menos apresurado y más orientado al disfrute del recorrido.
+
+**En resumen:** la mediana nos permite concluir que existe una brecha clara en la finalidad del servicio: los miembros priorizan la rapidez del traslado, mientras que los usuarios casuales priorizan el tiempo de uso.
+
+### 2. Comportamiento Temporal (Días y Meses)
+
+Analicé el volumen de viajes distribuidos por día de la semana y mes del año para detectar picos de demanda.
+
+**-Comportamiento semanal:**
+
+```{r}
+#| label: ANALISIS-VIAJES_SEMANA
+#| message: false
+#| warning: false
+#| echo: false
+#| fig-cap: "Distribución de viajes por día de la semana"
+
+
+library(scales) # Esta es la que hace la magia con los ejes
+# 1. Creamos el resumen contando los viajes
+resumen_semanal <- viajes_tipicos %>%
+  count(member_casual, day_of_week) %>%
+  # 2. Reordenamos usando los nombres EXACTOS que te devolvió el comando unique
+  mutate(day_of_week = factor(day_of_week, 
+                              # Los levels deben ser minúsculas (como están en tus datos)
+                              levels = c("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"),
+                              # Los labels son como querés que se vean en el gráfico (con mayúsculas)
+                              labels = c("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo")))
+
+# 3. Graficamos la tabla ya corregida
+ggplot(resumen_semanal, aes(x = day_of_week, y = n, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::label_number(big.mark = ".", decimal.mark = ",")) +
+  labs(title = "Viajes por día de la semana",
+       x = "Día de la semana",
+       y = "Total de viajes",
+       fill = "Tipo de usuario") +
+  theme_minimal() +
+  scale_fill_manual(values = c("#2c3e50", "#3498db"))
+```
+
+**Días de la semana:** se observó un incremento masivo de usuarios ocasionales durante los fines de semana, mientras que los miembros mantienen un flujo constante y superior de lunes a viernes.
+
+**-Comportamiento mensual:**
+
+```{r}
+#| label: ANALISIS-VIAJES_MENSUALES
+#| message: false
+#| warning: false
+#| echo: false
+#| fig-cap: "Distribución de viajes por mes"
+resumen_mensual <- viajes_tipicos %>%
+  mutate(mes = month(started_at, label = TRUE, abbr = FALSE)) %>%
+  count(member_casual, mes)
+
+# Aseguramos el orden de los meses (por si acaso)
+resumen_mensual$mes <- factor(resumen_mensual$mes, 
+                              levels = c("enero", "febrero", "marzo", "abril", "mayo", "junio", 
+                                         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"))
+
+ggplot(resumen_mensual, aes(x = as.numeric(mes), y = n, group = member_casual, color = member_casual)) +
+  
+  # 1. El sombreado del Verano
+  annotate("rect", xmin = 5.5, xmax = 8.5, ymin = 0, ymax = Inf, 
+           fill = "#BDC3C7", alpha = 0.2) + 
+  
+  # 2. El texto "TEMPORADA ALTA" (Más chico y limpio)
+  annotate("text", x = 7, y = max(resumen_mensual$n) * 1.06, 
+           label = "TEMPORADA ALTA", 
+           fontface = "bold", size = 2.5, color = "#7F8C8D") + # Size bajado a 2.8
+  
+  # 3. Líneas y puntos
+  geom_line(linewidth = 1.1, alpha = 0.9) +
+  geom_point(size = 3) +
+  
+  # 4. Colores y Negritas
+  scale_color_manual(values = c("casual" = "#4E95A4", "member" = "#2C3E50"),
+                     labels = c("casual" = expression(bold("casual")), 
+                                "member" = expression(bold("member")))) +
+  
+  # 5. Ejes y etiquetas
+  scale_x_continuous(breaks = 1:12, labels = levels(resumen_mensual$mes)) +
+  scale_y_continuous(labels = scales::comma) +
+  
+  labs(title = "Comportamiento mensual", 
+       subtitle = "El volumen de usuarios casuales se dispara en los meses cálidos",
+       x = "Mes", y = "Total de viajes", 
+       color = "TIPO DE USUARIO") + 
+  
+  theme_minimal() +
+  
+  # 6. Meses verticales y ajustes finales
+  theme(
+    axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1, face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.text = element_text(size = 10),
+    axis.title = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 14)
+  )
+
+
+```
+
+**Estacionalidad:** El volumen de viajes de usuarios ocasionales cae drásticamente en los meses de invierno, lo que refuerza la hipótesis del uso recreativo vinculado al clima.
+
+### 3. Preferencia de estaciones y equipamiento
+
+Identifiqué las 10 estaciones de inicio más populares para los usuarios ocasionales para localizar puntos estratégicos de conversión. Además, analicé la preferencia entre bicicletas clásicas y eléctricas.
+
+**-Preferencias de estaciones:**
+
+```{r}
+#| label: ANALISIS-VIAJES_ubicacion
+#| message: false
+#| warning: false
+#| echo: false
+#| fig-cap: "Distribución de viajes por zona"
+
+# 4. Tabla de Estaciones Top (Para la publicidad física)
+top_estaciones <- viajes_tipicos %>%
+  filter(member_casual == "casual", !is.na(start_station_name)) %>%
+  count(start_station_name, name = "Total_Viajes") %>%
+  arrange(desc(Total_Viajes)) %>%
+  head(10)
+
+knitr::kable(top_estaciones, 
+             col.names = c("ESTACION", "Total Viajes"))
+```
+
+![](Captura%20de%20pantalla%202026-04-24%20125439.jpg)
+
+**Hallazgo:** las 10 estaciones mas demandadas por los usuarios casuales se encuentran en la zona costera de la ciudad. Puntos excelentes para la implementacion de carteleria fisica de publicidad.
+
+-Preferencias de tipo de bicicleta:
+
+```{r}
+#| label: ANALISIS-tipos
+#| message: false
+#| warning: false
+#| echo: false
+#| fig-cap: "Distribución de viajes por tipo"
+
+
+# 5. Tabla de Preferencia de Bicis (La que me pediste recién)
+preferencia_bicis <- viajes_tipicos %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(cantidad_viajes = n()) %>%
+  mutate(porcentaje = round((cantidad_viajes / sum(cantidad_viajes)) * 100, 2))
+
+
+# QUE TIPO PREFIEREN LOS USUARIOS
+
+# 1. Preparar datos asegurando que todos los tipos cuenten
+preferencia_limpia <- viajes_final %>%
+  group_by(member_casual, rideable_type) %>%
+  summarise(total = n(), .groups = 'drop') %>%
+  group_by(member_casual) %>%
+  mutate(porcentaje = total / sum(total))
+
+# ... (todo el proceso de datos igual)
+
+ggplot(preferencia_limpia, aes(x = 2, y = total, fill = rideable_type)) +
+  geom_bar(stat = "identity", position = "fill", width = 1, color = "white") +
+  coord_polar(theta = "y") +
+  geom_text(aes(label = scales::percent(porcentaje, accuracy = 1)), 
+            position = position_fill(vjust = 0.5), 
+            color = "white", fontface = "bold", size = 3.5) +
+  
+  # --- CAMBIO 1: name = NULL para que no aparezca el título de la leyenda ---
+  scale_fill_manual(values = c("electric_bike" = "#4E95A4", 
+                               "classic_bike" = "#002D5A", 
+                               "docked_bike" = "#E6FD6F"),
+                    name = NULL, 
+                    labels = c("classic_bike" = "Clásica", 
+                               "electric_bike" = "Eléctrica", 
+                               "docked_bike" = "Anclada")) +
+  
+  facet_wrap(~member_casual, labeller = as_labeller(c("casual" = "USUARIOS\nCASUALES", 
+                                                      "member" = "MIEMBROS\nANUALES"))) +
+  xlim(0.5, 2.5) +
+  
+  # --- CAMBIO 2: Agregamos el título que pediste ---
+  labs(title = "Preferencias de usuarios",
+       ) +
+  
+  theme_void() +
+  theme(
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5, color = "#2C3E50", margin = margin(b = 10)),
+    plot.subtitle = element_text(size = 11, hjust = 0.5, color = "#7F8C8D", margin = margin(b = 25)),
+    strip.text = element_text(face = "bold", size = 11, color = "#002D5A", lineheight = 1.1, margin = margin(b = 10)), 
+    legend.position = "bottom",
+    plot.margin = margin(20, 20, 20, 20, "pt")
+  )
+
+```
+
+Como podemos observar, no hay diferencia significativa en la elección de los usuarios ocasionales por un tipo específico de bicicleta.. Pero sí hay una leve preferencia por las bicicletas eléctricas, lo cual puede ser una buena idea lanzar promociones sobre este tipo de bicicletas en particular.
+
+## Conclusiones y Recomendaciones Estratégicas
+
+Basado en el análisis de los datos, se proponen las siguientes acciones:
+
+1.  **Campañas de conversión de fin de semana:** dado que el volumen de usuarios ocasionales alcanza su pico los sábados y domingos, se recomienda lanzar ofertas de membresía anual focalizadas en esos días.
+2.  **Marketing estacional:** aprovechar los meses de verano y primavera para captar a los usuarios recreativos, ofreciendo planes anuales con descuentos por suscripción anticipada.
+3.  **Publicidad localizada:** priorizar las campañas físicas en las 10 estaciones de mayor flujo detectadas en este análisis para maximizar el impacto visual en el público objetivo.
