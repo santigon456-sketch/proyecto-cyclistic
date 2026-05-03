@@ -55,4 +55,3 @@ Basado en los patrones de frecuencia (picos en fines de semana) y duración, se 
 
 ---
 **Autor:** Santiago Gonzalez  
-*Analista de Datos orientado a la toma de decisiones basada en estadística.*
