@@ -1,4 +1,35 @@
 # Análisis de Datos — Cyclistic Bike Share
+# Descripción del Proyecto
+Este proyecto analiza el comportamiento de usuarios de Cyclistic, una empresa de bicicletas compartidas, con el objetivo de identificar patrones de uso y generar insights de negocio que ayuden a mejorar la conversión de usuarios casuales en miembros.
+
+El análisis se enfoca en:
+- comportamiento temporal
+- diferencias entre tipos de usuarios
+- patrones de uso
+- horarios y días de mayor demanda
+- oportunidades estratégicas para marketing y operaciones
+
+---
+
+## Objetivo del Análisis
+Responder preguntas de negocio mediante análisis de datos:
+
+- ¿Cómo utilizan el servicio los usuarios casuales y los miembros?
+- ¿Qué diferencias existen en duración y frecuencia de viajes?
+- ¿Cuáles son los períodos de mayor actividad?
+- ¿Qué insights pueden ayudar a mejorar la estrategia comercial?
+
+---
+
+## Dataset
+Dataset público de viajes de Cyclistic Bike Share.
+
+Los datos incluyen:
+- duración de viajes
+- estaciones de inicio y fin
+- tipo de usuario
+- fecha y horario
+- información geográfica
 
 ---
 
